@@ -1,0 +1,105 @@
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: users/{userId}/settings
+// Document ID: robot
+// Fields:
+//   - headColor: string (required, hex color)
+//   - emissiveColor: string (required, hex color)
+//   - emissiveIntensity: number (required, 0-2)
+//   - bodyColor: string (required, hex color)
+//   - eyeColor: string (required, hex color)
+//   - auraColor: string (required, hex color)
+//   - updatedAt: timestamp (required)
+//
+// Collection: stats
+// Document ID: {channelId}
+// Fields:
+//   - messageCount: number (required, >= 0)
+//   - activeUsers: number (required, >= 0)
+//   - sentimentScore: number (required, -1 to 1)
+//   - lastUpdated: timestamp (required)
+//
+// ===============================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "jamie.fraser1988@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isValidHexColor(color) {
+      return color is string && color.matches("^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$");
+    }
+
+    function isValidRobotSettings(data) {
+      return data.keys().hasAll(['headColor', 'emissiveColor', 'emissiveIntensity', 'bodyColor', 'eyeColor', 'auraColor', 'updatedAt']) &&
+        isValidHexColor(data.headColor) &&
+        isValidHexColor(data.emissiveColor) &&
+        data.emissiveIntensity is number && data.emissiveIntensity >= 0 && data.emissiveIntensity <= 2 &&
+        isValidHexColor(data.bodyColor) &&
+        isValidHexColor(data.eyeColor) &&
+        isValidHexColor(data.auraColor) &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidStats(data) {
+      return data.keys().hasAll(['messageCount', 'activeUsers', 'sentimentScore', 'lastUpdated']) &&
+        data.messageCount is number && data.messageCount >= 0 &&
+        data.activeUsers is number && data.activeUsers >= 0 &&
+        data.sentimentScore is number && data.sentimentScore >= -1 && data.sentimentScore <= 1 &&
+        data.lastUpdated is timestamp;
+    }
+
+    function isValidCustomCommand(data) {
+      return data.keys().hasAll(['trigger', 'response', 'reaction', 'createdAt']) &&
+        data.trigger is string && data.trigger.size() > 0 && data.trigger.size() < 50 &&
+        data.response is string && data.response.size() > 0 && data.response.size() < 500 &&
+        data.reaction is string && data.reaction.size() > 0 && data.reaction.size() < 50 &&
+        data.createdAt is timestamp;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId}/settings/robot {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create, update: if isOwner(userId) && isValidRobotSettings(request.resource.data);
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+
+    match /users/{userId}/customCommands/{commandId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create, update: if isOwner(userId) && isValidCustomCommand(request.resource.data);
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+
+    match /stats/{channelId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin(); // Only admin (bot owner) can update stats
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

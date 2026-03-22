@@ -1,0 +1,57 @@
+{
+  "entities": {
+    "RobotSettings": {
+      "title": "Robot Settings",
+      "description": "Customization settings for the user's robot.",
+      "type": "object",
+      "properties": {
+        "headColor": { "type": "string", "description": "Hex color for the head." },
+        "emissiveColor": { "type": "string", "description": "Hex color for the emissive glow." },
+        "emissiveIntensity": { "type": "number", "description": "Intensity of the emissive glow." },
+        "bodyColor": { "type": "string", "description": "Hex color for the body." },
+        "eyeColor": { "type": "string", "description": "Hex color for the eyes." },
+        "auraColor": { "type": "string", "description": "Hex color for the aura and rings." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last update timestamp." }
+      },
+      "required": ["headColor", "emissiveColor", "emissiveIntensity", "bodyColor", "eyeColor", "auraColor"]
+    },
+    "BotStats": {
+      "title": "Bot Stats",
+      "description": "Real-time statistics for the bot's channel.",
+      "type": "object",
+      "properties": {
+        "messageCount": { "type": "integer", "description": "Total messages processed." },
+        "activeUsers": { "type": "integer", "description": "Number of unique active users." },
+        "sentimentScore": { "type": "number", "description": "Average sentiment score (-1 to 1)." },
+        "lastUpdated": { "type": "string", "format": "date-time", "description": "Last update timestamp." }
+      },
+      "required": ["messageCount", "activeUsers", "sentimentScore"]
+    },
+    "CustomCommand": {
+      "title": "Custom Command",
+      "description": "A user-defined chat command and its associated action.",
+      "type": "object",
+      "properties": {
+        "trigger": { "type": "string", "description": "The command trigger (e.g., '!hello')." },
+        "response": { "type": "string", "description": "The message the bot should send." },
+        "reaction": { "type": "string", "description": "The robot reaction to trigger (e.g., 'happy', 'wave')." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp." }
+      },
+      "required": ["trigger", "response", "reaction"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/settings/robot": {
+      "schema": "RobotSettings",
+      "description": "User-specific robot customization settings."
+    },
+    "/users/{userId}/customCommands/{commandId}": {
+      "schema": "CustomCommand",
+      "description": "User-defined chat commands."
+    },
+    "/stats/{channelId}": {
+      "schema": "BotStats",
+      "description": "Channel-specific bot performance statistics."
+    }
+  }
+}
