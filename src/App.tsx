@@ -146,14 +146,27 @@ export default function App() {
 
   // Test Connection (Critical Directive)
   useEffect(() => {
+    let retries = 3;
     async function testConnection() {
       try {
-        await getDocFromServer(doc(db, 'test', 'connection'));
+        const testDoc = doc(db, 'test', 'connection');
+        await getDocFromServer(testDoc);
+        console.log("Firebase Connection: Success");
       } catch (error) {
-        if(error instanceof Error && error.message.includes('the client is offline')) {
-          console.error("Please check your Firebase configuration. ");
+        console.warn("Firebase Connection Test Result:", error);
+        if(error instanceof Error && (error.message.includes('the client is offline'))) {
+          // If the DB was just created, it might take a moment.
+          if (retries > 0) {
+             retries--;
+             console.log("Retrying Firebase connection...");
+             setTimeout(testConnection, 3000);
+          } else {
+             console.warn("Firebase Connection Warning: The Cloud Firestore database might still be initializing. It can take a few minutes before the database becomes fully accessible globally.");
+          }
         }
-        // Skip logging for other errors, as this is simply a connection test.
+        else if(error instanceof Error && (error.message.includes('permission-denied') || error.message.includes('Missing or insufficient permissions'))) {
+          console.error("Firebase Connection Error: Please ensure you have deployed the firestore rules.");
+        }
       }
     }
     testConnection();
@@ -207,6 +220,8 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [showStreamerRoom, setShowStreamerRoom] = useState(false);
+  const [showAR, setShowAR] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const [grabbedMessageId, setGrabbedMessageId] = useState<string | null>(null);
   const [isTalking, setIsTalking] = useState(false);
   const [glitchIntensity, setGlitchIntensity] = useState(0);
@@ -214,6 +229,50 @@ export default function App() {
   const [storedQuestions, setStoredQuestions] = useState<StoredQuestion[]>([]);
   const [simulatedInput, setSimulatedInput] = useState("");
   const [simulatedUser, setSimulatedUser] = useState("Tester");
+
+  // AR Mode Camera Logic
+  useEffect(() => {
+    let currentStream: MediaStream | null = null;
+    
+    async function setupCamera() {
+      if (showAR) {
+        try {
+          currentStream = await navigator.mediaDevices.getUserMedia({ 
+            video: { 
+              facingMode: "user",
+              width: { ideal: 1920 },
+              height: { ideal: 1080 }
+            } 
+          });
+          if (videoRef.current) {
+            videoRef.current.srcObject = currentStream;
+            // Ensure video plays
+            videoRef.current.onloadedmetadata = () => {
+              videoRef.current?.play().catch(e => console.error("Video play failed:", e));
+            };
+          }
+        } catch (err) {
+          console.error("Error accessing camera:", err);
+          setShowAR(false);
+        }
+      } else {
+        if (currentStream) {
+          currentStream.getTracks().forEach(track => track.stop());
+        }
+        if (videoRef.current) {
+          videoRef.current.srcObject = null;
+        }
+      }
+    }
+
+    setupCamera();
+
+    return () => {
+      if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [showAR]);
 
   // Refs for materials to update in real-time
   const headMatRef = useRef<THREE.MeshPhysicalMaterial | null>(null);
@@ -294,8 +353,9 @@ export default function App() {
       const path = `users/${user.uid}/settings/robot`;
       try {
         const docRef = doc(db, "users", user.uid, "settings", "robot");
+        const { customModelUrl, modelType, ...savableColors } = robotColors;
         await setDoc(docRef, {
-          ...robotColors,
+          ...savableColors,
           readOutChance,
           defaultChannel,
           updatedAt: Timestamp.now()
@@ -1193,13 +1253,15 @@ export default function App() {
         const box = new THREE.Box3().setFromObject(model);
         const size = box.getSize(new THREE.Vector3());
         const maxDim = Math.max(size.x, size.y, size.z);
-        const scale = 2 / maxDim;
-        model.scale.setScalar(scale);
-        
-        const center = box.getCenter(new THREE.Vector3());
-        model.position.x = -center.x * scale;
-        model.position.y = -center.y * scale;
-        model.position.z = -center.z * scale;
+        if (maxDim > 0) {
+          const scale = 2 / maxDim;
+          model.scale.setScalar(scale);
+          
+          const center = box.getCenter(new THREE.Vector3());
+          model.position.x = -center.x * scale;
+          model.position.y = -center.y * scale;
+          model.position.z = -center.z * scale;
+        }
 
         robot.add(model);
 
@@ -1650,6 +1712,28 @@ export default function App() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* AR Mode Video Background */}
+        <AnimatePresence>
+          {showAR && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-[-2] overflow-hidden"
+            >
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className="absolute min-w-full min-h-full object-cover"
+                style={{ transform: 'scaleX(-1)' }} // Mirror the camera
+              />
+              <div className="absolute inset-0 bg-black/20" />
+            </motion.div>
+          )}
+        </AnimatePresence>
       {/* Glitch Overlay */}
       <AnimatePresence>
         {glitchMessage && (
@@ -1969,6 +2053,19 @@ export default function App() {
                             className={`w-14 h-8 rounded-full transition-all relative ${showStreamerRoom ? 'bg-cyan-500' : 'bg-white/10'}`}
                           >
                             <div className={`absolute top-1 w-6 h-6 rounded-full bg-white transition-all ${showStreamerRoom ? 'left-7' : 'left-1'}`} />
+                          </button>
+                        </div>
+
+                        <div className="flex items-center justify-between p-6 bg-white/5 rounded-3xl border border-white/5">
+                          <div className="flex flex-col gap-1">
+                            <span className="text-xs font-bold text-white uppercase tracking-widest">AR Mode (Webcam)</span>
+                            <span className="text-[10px] text-white/40 uppercase tracking-wider">Use your webcam as the background for the robot</span>
+                          </div>
+                          <button
+                            onClick={() => setShowAR(!showAR)}
+                            className={`w-14 h-8 rounded-full transition-all relative ${showAR ? 'bg-cyan-500' : 'bg-white/10'}`}
+                          >
+                            <div className={`absolute top-1 w-6 h-6 rounded-full bg-white transition-all ${showAR ? 'left-7' : 'left-1'}`} />
                           </button>
                         </div>
 
@@ -2318,12 +2415,16 @@ export default function App() {
                       <select 
                         value={robotColors.modelPreset} 
                         onChange={(e) => setRobotColors(prev => ({ ...prev, modelPreset: e.target.value as any }))}
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs font-bold text-white uppercase tracking-widest focus:outline-none focus:border-cyan-500/50 transition-all"
+                        disabled={!!robotColors.customModelUrl}
+                        className={`w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs font-bold text-white uppercase tracking-widest focus:outline-none focus:border-cyan-500/50 transition-all ${robotColors.customModelUrl ? 'opacity-50 cursor-not-allowed' : ''}`}
                       >
                         {Object.entries(MODEL_PRESETS).map(([id, name]) => (
                           <option key={id} value={id}>{name}</option>
                         ))}
                       </select>
+                      {robotColors.customModelUrl && (
+                        <span className="text-[9px] text-yellow-400 mt-1 font-bold">Custom model active. Reset below to use presets.</span>
+                      )}
                     </div>
                     <div className="flex flex-col gap-2">
                       <label className="text-[10px] font-bold uppercase tracking-wider text-white/40">Head Color</label>
@@ -2422,7 +2523,10 @@ export default function App() {
                             if (file) {
                               const url = URL.createObjectURL(file);
                               const type = file.name.toLowerCase().endsWith(".fbx") ? "fbx" : "glb";
-                              setRobotColors(prev => ({ ...prev, customModelUrl: url, modelType: type }));
+                              setRobotColors(prev => {
+                                if (prev.customModelUrl) URL.revokeObjectURL(prev.customModelUrl);
+                                return { ...prev, customModelUrl: url, modelType: type };
+                              });
                             }
                           }}
                           className="hidden"
@@ -2437,7 +2541,10 @@ export default function App() {
                         </label>
                         {robotColors.customModelUrl && (
                           <button 
-                            onClick={() => setRobotColors(prev => ({ ...prev, customModelUrl: null, modelType: null }))}
+                            onClick={() => setRobotColors(prev => {
+                              if (prev.customModelUrl) URL.revokeObjectURL(prev.customModelUrl);
+                              return { ...prev, customModelUrl: null, modelType: null };
+                            })}
                             className="text-[10px] font-bold uppercase tracking-widest text-red-400 hover:text-red-300 transition-colors flex items-center justify-center gap-2"
                           >
                             <Trash2 size={12} />

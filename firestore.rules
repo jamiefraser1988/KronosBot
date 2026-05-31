@@ -80,6 +80,10 @@ service cloud.firestore {
     // Rules
     // ===============================================================
 
+    match /test/connection {
+      allow read: if true;
+    }
+
     match /users/{userId}/settings/robot {
       allow read: if isOwner(userId) || isAdmin();
       allow create, update: if isOwner(userId) && isValidRobotSettings(request.resource.data);

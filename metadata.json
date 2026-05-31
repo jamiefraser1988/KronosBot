@@ -1,5 +1,5 @@
 {
   "name": "Kronos AI Streaming Chatbot",
   "description": "A 3D robot overlay for streamers that interacts with chat, summarizes consensus, and reacts to events like bans.",
-  "requestFramePermissions": []
+  "requestFramePermissions": ["camera"]
 }
